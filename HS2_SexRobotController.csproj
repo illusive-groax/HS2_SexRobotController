@@ -1,0 +1,66 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>HS2_SexRobotController</AssemblyName>
+    <Product>HS2_SexRobotController</Product>
+    <Version>2.2.0</Version>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+    <RestoreAdditionalProjectSources>
+      https://api.nuget.org/v3/index.json;
+      https://nuget.bepinex.dev/v3/index.json;
+      https://nuget.samboy.dev/v3/index.json
+    </RestoreAdditionalProjectSources>
+    <RootNamespace>HS2_SexRobotController</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+	  <!-- BepInEx -->
+	  <PackageReference Include="BepInEx.Analyzers" Version="1.*" PrivateAssets="all" />
+	  <PackageReference Include="BepInEx.Core" Version="5.*" />
+	  <PackageReference Include="BepInEx.PluginInfoProps" Version="2.*" />
+	  <PackageReference Include="BepInEx.BaseLib" version="5.*" />
+	  <PackageReference Include="HarmonyX" version="2.*" />
+	  <!-- UnityEngine -->
+	  <PackageReference Include="UnityEngine.Core" version="2018.1.0" />
+	  <PackageReference Include="UnityEngine.UI" version="2018.1.0" />
+	  <PackageReference Include="Microsoft.Unity.Analyzers" version="1.*" developmentDependency="true" />
+	  <PackageReference Include="UnityEngine.Modules" Version="6000.4.8" IncludeAssets="compile" />
+	  <!-- VS Dependency -->
+	  <PackageReference Include="NuGet.CommandLine" version="7.*" targetFramework="net472" developmentDependency="true" />
+	  <!-- IllusionLibs -->
+	  <PackageReference Include="IllusionLibs.BepInEx" version="5.4.22" />
+	  <PackageReference Include="IllusionLibs.BepInEx.Harmony" version="2.9.0" />
+	  <PackageReference Include="IllusionLibs.HoneySelect2.Assembly-CSharp" Version="2020.5.29.4" ExcludeAssets="runtime" />
+	  <PackageReference Include="IllusionLibs.HoneySelect2.IL" Version="2020.5.29.4" ExcludeAssets="runtime" />
+	  <PackageReference Include="IllusionLibs.HoneySelect2.UnityEngine.AnimationModule" Version="2018.4.11.4" ExcludeAssets="runtime" />
+	  <PackageReference Include="IllusionLibs.HoneySelect2.UnityEngine.CoreModule" Version="2018.4.11.4" ExcludeAssets="runtime" />
+  </ItemGroup>
+  
+  <ItemGroup Condition="'$(TargetFramework.TrimEnd(`0123456789`))' == 'net'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+	<PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+		<DebugSymbols>true</DebugSymbols>
+		<DebugType>full</DebugType>
+		<Optimize>false</Optimize>
+		<OutputPath>bin\Debug\</OutputPath>
+		<DefineConstants>DEBUG;TRACE</DefineConstants>
+		<ErrorReport>prompt</ErrorReport>
+		<WarningLevel>4</WarningLevel>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	</PropertyGroup>
+	
+	<PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+		<DebugType>none</DebugType>
+		<Optimize>true</Optimize>
+		<OutputPath>bin\Release\</OutputPath>
+		<DefineConstants>TRACE</DefineConstants>
+		<ErrorReport>prompt</ErrorReport>
+		<WarningLevel>4</WarningLevel>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	</PropertyGroup>
+
+</Project>
