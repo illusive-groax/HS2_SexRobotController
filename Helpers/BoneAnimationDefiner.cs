@@ -1,18 +1,23 @@
 ﻿using System.Collections.Generic;
 
-namespace HS2_SexRobotController
+namespace HS2_SexRobotController.Helpers
 {
     internal sealed class BoneAnimationDefiner
     {
-        //Based on the HSceneFlag: loopType
+        //Based on the HSceneFlag: LoopType
         //used for increasing stroking speed only for slow/weak
+        // 0:弱ループ
+        // 1:強ループ
+        // 2:絶頂前ループ
+        // 3:中ループ
+        // -1:その他
         internal enum LoopType
         {
             OTHER = -1,
             WEAK_LOOP = 0,
             STRONG_LOOP = 1,
-            PRE_CLIMAX_LOOP = 2,
-            MEDIUM_LOOP = 3
+            ORGASM_LOOP = 2,
+            MEDIUM_LOOP = 3 // not implemented (has not appeared in logs)
         }
         internal enum BodyBone
         {

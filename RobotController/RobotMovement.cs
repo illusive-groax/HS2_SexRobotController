@@ -1,66 +1,77 @@
 ﻿using AIChara;
+using HS2_SexRobotController.Helpers;
+using HS2_SexRobotController.Plugin;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-namespace HS2_SexRobotController
+namespace HS2_SexRobotController.RobotController
 {
     internal sealed class RobotMovement
     {
+        internal const float L0_MOVEMENT_MULTIPLIER_MIN = 0.25f;
+        internal const float L0_MOVEMENT_MULTIPLIER_MAX = 5.0f;
+
+        internal int LoopType;
+        internal ChaControl[] Males { get; set; }
+        internal ChaControl[] Females { get; set; }
+        internal bool UpdatePosition { get; set; }
+        internal bool SpeedChanged { get; set; }
+        internal string AnimationName { get; set; }
+        internal string PrevAnimationName { get; set; }
+        internal bool AnimationChanged { get; set; }
+        // orgasm sets LoopType to IDLE, therefore check if orgasm for that last shake
+        internal bool IsNowOrgasm { get; set; }
+
+        // is the current animation a Service or Insertion type of animation?
+        internal bool AnimationIsInsertion { get; set; }
+
+        private float _autoRangeMin;
+        private float _autoRangeMid;
+        private float _autoRangeMax;
+        private float _l0MovementMultiplier;
+
+        private Transform _malePenisBase;
+        private Transform _malePenisTip;
+        private Transform _malePenisLeftBall;
+        private Transform _malePenisRightBall;
+        private Transform _femaleMouthLipsUpper;
+        private Transform _femaleMouthLipsLower;
+        private Transform _femaleMouthLeft;
+        private Transform _femaleMouthRight;
+        private Transform _femaleHip;
+        private Transform _femaleVagina;
+        private Transform _femaleAnus;
+        private Transform _femaleMiddleBreastsLeft;
+        private Transform _femaleMiddleBreastsRight;
+        private Transform _femaleBreasts;
+        private Transform _femaleMiddleFingerLeft;
+        private Transform _femaleRingFingerLeft;
+        private Transform _femaleHandLeft;
+        private Transform _femaleMiddleFingerRight;
+        private Transform _femaleRingFingerRight;
+        private Transform _femaleHandRight;
+        private Transform _femaleFootLeft;
+        private Transform _femaleFootRight;
+        private Transform _femaleToesLeft;
+        private Transform _femaleToesRight;
+
+        // keep track of sent commands, don't send duplicate T-Code commands
+        private string _lastCommand;
         private static RobotMovement _instance;
-        private static readonly object _lock = new object();
-        private static SerialPortConnection serialPortConnection;
-
-        internal int loopType;
-        internal const float LimitStrokeLengthMultiplier = 1.0f;
-        internal string animationName { get; set; }
-        internal string prevAnimationName { get; set; }
-        internal bool animationChanged { get; set; }
-        internal bool speedChanged { get; set; }
-        internal ChaControl[] females { get; set; }
-        internal ChaControl[] males { get; set; }
-
-        private float autoRangeMin;
-        private float autoRangeMid;
-        private float autoRangeMax;
-        internal bool updatePosition { get; set; }
-        private BoneAnimationDefiner.FemaleTargetType currentFemaleTargetType;
-
-        private Transform malePenisBase;
-        private Transform malePenisTip;
-        private Transform malePenisLeftBall;
-        private Transform malePenisRightBall;
-        private Transform femaleMouthLipsUpper;
-        private Transform femaleMouthLipsLower;
-        private Transform femaleMouthLeft;
-        private Transform femaleMouthRight;
-        private Transform femaleHip;
-        private Transform femaleVagina;
-        private Transform femaleAnus;
-        private Transform femaleMiddleBreastsLeft;
-        private Transform femaleMiddleBreastsRight;
-        private Transform femaleBreasts;
-        private Transform femaleMiddleFingerLeft;
-        private Transform femaleRingFingerLeft;
-        private Transform femaleHandLeft;
-        private Transform femaleMiddleFingerRight;
-        private Transform femaleRingFingerRight;
-        private Transform femaleHandRight;
-        private Transform femaleFootLeft;
-        private Transform femaleFootRight;
-        private Transform femaleToesLeft;
-        private Transform femaleToesRight;
+        private static readonly object _lock = new();
+        private static SerialPortConnection _serialPortConnection;
+        private BoneAnimationDefiner.FemaleTargetType _currentFemaleTargetType;
 
         private RobotMovement()
         {
-            males = null;
-            females = null;
-            loopType = -1;
-            animationName = "";
-            speedChanged = false;
-            updatePosition = false;
-            serialPortConnection = SerialPortConnection.GetInstance();
+            Males = null;
+            Females = null;
+            AnimationName = "";
+            LoopType = -1;
+            SpeedChanged = false;
+            UpdatePosition = false;
+            _serialPortConnection = SerialPortConnection.GetInstance();
         }
 
         internal static RobotMovement GetInstance()
@@ -81,183 +92,212 @@ namespace HS2_SexRobotController
             return _instance;
         }
 
-        internal List<string> updateAnimationStatus()
+        internal void UpdateAnimationStatus()
         {
-            List<string> logList = new List<string>();
-            if (BoneAnimationDefiner.animationFemaleTargetDictionary.ContainsKey(animationName))
+
+            if (BoneAnimationDefiner.animationFemaleTargetDictionary.ContainsKey(AnimationName))
             {
-                if (animationChanged)
+                bool isIdleLoop = (LoopType == (int)BoneAnimationDefiner.LoopType.OTHER);
+                if (AnimationChanged)
                 {
-                    logList.AddRange(getBonePositionData());
-                    autoRangeMin = 1.0f;
-                    autoRangeMax = 0.0f;
+                    GetBonePositionData();
+                    _autoRangeMin = 1.0f;
+                    _autoRangeMax = 0.0f;
                     // speed change is only relevant when increasing/decreasing the speed
-                    speedChanged = false;
+                    SpeedChanged = false;
                 }
-                else if (speedChanged)
+                else if (SpeedChanged && !isIdleLoop)
                 {
-                    autoRangeMin = 1.0f;
-                    autoRangeMax = 0.0f;
-                    speedChanged = false;
+                    _autoRangeMin = 1.0f;
+                    _autoRangeMax = 0.0f;
+                    SpeedChanged = false;
                 }
                 try
                 {
-                    logList.AddRange(updateRobotPosition());
+                    UpdateL0MultiplierValues();
+                    UpdateRobotPosition();
                 }
                 catch (Exception ex)
                 {
-                    logList.Add("Error occurred upon position update: " + ex.ToString());
+                    HS2_SexRobotControllerPlugin.LogInfo("Error occurred upon position update: " + ex.ToString());
                 }
-            }
-            return logList;
-        }
-
-        private List<string> getBonePositionData()
-        {
-            int maleIndex = 0;
-            int girlIndex = 0;
-            List<string> logList = new List<string>();
-
-            if (serialPortConnection.diagnosticsConfig.Value)
-            {
-                logList.Add("Animation: " + animationName);
-                logList.Add("females found: " + females.Length.ToString());
-            }
-
-            if (males.Length >= 1 && females.Length > 0)
-            {
-                updateMaleTransforms(maleIndex);
-
-                // Lookup in the animation dictionary the female target type for this current animation
-                BoneAnimationDefiner.FemaleTargetType femaleTargetTypeCurrent;
-                BoneAnimationDefiner.animationFemaleTargetDictionary.TryGetValue(animationName, out femaleTargetTypeCurrent);
-                currentFemaleTargetType = femaleTargetTypeCurrent;
-
-                if (currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.VAGINAL || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.ANAL || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.ORAL
-                    || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.BREASTS || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTHAND || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTHAND
-                    || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.INTERCRURAL || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTFOOT || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTFOOT
-                    || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.BOTH_FEET)
-                {
-                    updateFemaleTransforms(girlIndex);
-                }
-                else if (currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.VAGINALSWAP || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.ORALSWAP
-                    || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.BREASTSWAP || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTHANDSWAP || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTHANDSWAP
-                    || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.INTERCRURALSWAP || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTFOOTSWAP || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTFOOTSWAP)
-                {
-                    if (females.Length == 2)
-                    {
-                        girlIndex = 1;
-                        updateFemaleTransforms(girlIndex);
-                    }
-                    else
-                    {
-                        logList.Add("ERROR: The current HScene (swap) doesn't have 2 females.");
-                    }
-                }
-                if (serialPortConnection.diagnosticsConfig.Value)
-                {
-                    logList.Add("Current animation: " + animationName);
-                }
-
-                animationChanged = false;
-                updatePosition = true;
             }
             else
             {
-                updatePosition = false;
-                logList.Add("ERROR: The current HScene doesn't have 1 male and at least 1 female.");
+                // not a valid position, send it home
+                SendTCodeHomeCommand();
             }
-            return logList;
+        }
+        internal void HSceneEnding()
+        {
+            // HScene has ended, ensure the device stops moving
+            UpdatePosition = false;
+            AnimationChanged = false;
+            _l0MovementMultiplier = HS2_SexRobotControllerPlugin.RobotL0MovementMultiplier_Idle.Value;
+            // send device home
+            SendTCodeHomeCommand();
         }
 
-        private void updateMaleTransforms(int maleIndex)
+        private void UpdateL0MultiplierValues()
         {
-            // Find/set all the male Transforms needed for the calculations here so it doesn't have to happen each Update()
+            // set multiplier based on the current looptype playing
+            _l0MovementMultiplier = LoopType switch
+            {
+                (int)BoneAnimationDefiner.LoopType.WEAK_LOOP => AnimationIsInsertion ? HS2_SexRobotControllerPlugin.RobotL0MovementMultiplierPenetration_Weak.Value
+                                        : HS2_SexRobotControllerPlugin.RobotL0MovementMultiplierService_Weak.Value,
+                (int)BoneAnimationDefiner.LoopType.STRONG_LOOP => AnimationIsInsertion ? HS2_SexRobotControllerPlugin.RobotL0MovementMultiplierPenetration_Strong.Value
+                                        : HS2_SexRobotControllerPlugin.RobotL0MovementMultiplierService_Strong.Value,
+                (int)BoneAnimationDefiner.LoopType.ORGASM_LOOP => AnimationIsInsertion ? HS2_SexRobotControllerPlugin.RobotL0MovementMultiplierPenetration_Orgasm.Value
+                                        : HS2_SexRobotControllerPlugin.RobotL0MovementMultiplierService_Orgasm.Value,
+                _ => (IsNowOrgasm) ? HS2_SexRobotControllerPlugin.RobotL0MovementMultiplier_Climax.Value : HS2_SexRobotControllerPlugin.RobotL0MovementMultiplier_Idle.Value,
+            };
+        }
+
+        private void GetBonePositionData()
+        {
+            int maleIndex = 0;
+            int girlIndex = 0;
+
+
+            if (HS2_SexRobotControllerPlugin.DiagnosticsConfig.Value)
+            {
+                HS2_SexRobotControllerPlugin.LogInfo("Animation: " + AnimationName);
+                HS2_SexRobotControllerPlugin.LogInfo("Females found: " + Females.Length.ToString());
+            }
+
+            if (Males.Length >= 1 && Females.Length > 0)
+            {
+                UpdateMaleTransforms(maleIndex);
+
+                // Lookup in the animation dictionary the female target type for this current animation
+                BoneAnimationDefiner.animationFemaleTargetDictionary.TryGetValue(AnimationName, out BoneAnimationDefiner.FemaleTargetType femaleTargetTypeCurrent);
+                _currentFemaleTargetType = femaleTargetTypeCurrent;
+
+                if (_currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.VAGINAL || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.ANAL || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.ORAL
+                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.BREASTS || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTHAND || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTHAND
+                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.INTERCRURAL || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTFOOT || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTFOOT
+                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.BOTH_FEET)
+                {
+                    UpdateFemaleTransforms(girlIndex);
+                }
+                else if (_currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.VAGINALSWAP || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.ORALSWAP
+                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.BREASTSWAP || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTHANDSWAP || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTHANDSWAP
+                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.INTERCRURALSWAP || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTFOOTSWAP || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTFOOTSWAP)
+                {
+                    if (Females.Length == 2)
+                    {
+                        girlIndex = 1;
+                        UpdateFemaleTransforms(girlIndex);
+                    }
+                    else
+                    {
+                        HS2_SexRobotControllerPlugin.LogInfo("ERROR: The current HScene (swap) doesn't have 2 Females.");
+                    }
+                }
+                if (HS2_SexRobotControllerPlugin.DiagnosticsConfig.Value)
+                {
+                    HS2_SexRobotControllerPlugin.LogInfo("Current animation: " + AnimationName);
+                }
+
+                AnimationChanged = false;
+                UpdatePosition = true;
+            }
+            else
+            {
+                UpdatePosition = false;
+                HS2_SexRobotControllerPlugin.LogInfo("ERROR: The current HScene doesn't have 1 male and at least 1 female.");
+            }
+
+        }
+
+        private void UpdateMaleTransforms(int maleIndex)
+        {
+            // Find/set all the male Transforms needed for the calculations
             // Get the base of the male's penis
-            malePenisBase = males[maleIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.PENIS_BASE]).FirstOrDefault();
+            _malePenisBase = Males[maleIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.PENIS_BASE]).FirstOrDefault();
 
             // Get the tip of the male's penis
-            malePenisTip = males[maleIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.PENIS_TIP]).FirstOrDefault();
+            _malePenisTip = Males[maleIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.PENIS_TIP]).FirstOrDefault();
 
             // Get the male's penis left ball
-            malePenisLeftBall = males[maleIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.BALLS_L]).FirstOrDefault();
+            _malePenisLeftBall = Males[maleIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.BALLS_L]).FirstOrDefault();
 
             // Get the male's penis right ball
-            malePenisRightBall = males[maleIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.BALLS_R]).FirstOrDefault();
+            _malePenisRightBall = Males[maleIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.BALLS_R]).FirstOrDefault();
         }
 
-        private void updateFemaleTransforms(int girlIndex)
+        private void UpdateFemaleTransforms(int girlIndex)
         {
             // Find/set all the female Transforms needed for the VAGINAL / ANAL / INTERCRURAL calculations
             // Get the base of the female's hip
-            femaleHip = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_HIPS]).FirstOrDefault();
+            _femaleHip = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_HIPS]).FirstOrDefault();
 
             // Get the base of the female's vagina
-            femaleVagina = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.VAGINA]).FirstOrDefault();
+            _femaleVagina = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.VAGINA]).FirstOrDefault();
 
             // Get the base of the female's anus
-            femaleAnus = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.ANUS]).FirstOrDefault();
+            _femaleAnus = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.ANUS]).FirstOrDefault();
 
             // Find/set all the female Transforms needed for the ORAL calculations
             // Get the female's mouth upper lips
-            femaleMouthLipsUpper = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_MOUTH_UPPER_LIP]).FirstOrDefault();
+            _femaleMouthLipsUpper = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_MOUTH_UPPER_LIP]).FirstOrDefault();
 
             // Get the female's mouth lower lips
-            femaleMouthLipsLower = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_MOUTH_LOWER_LIP]).FirstOrDefault();
+            _femaleMouthLipsLower = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_MOUTH_LOWER_LIP]).FirstOrDefault();
 
             // Get the female's mouth left
-            femaleMouthLeft = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_MOUTHL]).FirstOrDefault();
+            _femaleMouthLeft = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_MOUTHL]).FirstOrDefault();
 
             // Get the female's mouth right
-            femaleMouthRight = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_MOUTHR]).FirstOrDefault();
+            _femaleMouthRight = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_MOUTHR]).FirstOrDefault();
 
             // Find/set all the female Transforms needed for the BREASTS calculations
             // Get the female's middle of the breasts left
-            femaleMiddleBreastsLeft = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_BREASTL]).FirstOrDefault();
+            _femaleMiddleBreastsLeft = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_BREASTL]).FirstOrDefault();
 
             // Get the female's middle of the breasts right
-            femaleMiddleBreastsRight = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_BREASTR]).FirstOrDefault();
+            _femaleMiddleBreastsRight = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_BREASTR]).FirstOrDefault();
 
             // Get the female's breasts center on the chest
-            femaleBreasts = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_BREAST]).FirstOrDefault();
+            _femaleBreasts = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_BREAST]).FirstOrDefault();
 
             // Find/set all the female Transforms needed for the LEFTHAND / RIGHTHAND calculations
             // Get the female's left hand's middle finger
-            femaleMiddleFingerLeft = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_HAND_MIDDLEL]).FirstOrDefault();
+            _femaleMiddleFingerLeft = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_HAND_MIDDLEL]).FirstOrDefault();
 
             // Get the female's left hand's ring fingers
-            femaleRingFingerLeft = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_HAND_RINGL]).FirstOrDefault();
+            _femaleRingFingerLeft = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_HAND_RINGL]).FirstOrDefault();
 
             // Get the female's left hand's center
-            femaleHandLeft = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_HANDL]).FirstOrDefault();
+            _femaleHandLeft = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_HANDL]).FirstOrDefault();
 
             // Get the female's right hand's middle finger
-            femaleMiddleFingerRight = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_HAND_MIDDLER]).FirstOrDefault();
+            _femaleMiddleFingerRight = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_HAND_MIDDLER]).FirstOrDefault();
 
             // Get the female's right hand's ring fingers
-            femaleRingFingerRight = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_HAND_RINGR]).FirstOrDefault();
+            _femaleRingFingerRight = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_HAND_RINGR]).FirstOrDefault();
 
             // Get the female's right hand's center
-            femaleHandRight = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_HANDR]).FirstOrDefault();
+            _femaleHandRight = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_HANDR]).FirstOrDefault();
 
             // Find/set all the female Transforms needed for the LEFTFOOT / RIGHTFOOT / BOTH_FEET calculations
             // Get the base of the female's left foot
-            femaleFootLeft = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_FOOTL]).FirstOrDefault();
+            _femaleFootLeft = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_FOOTL]).FirstOrDefault();
 
             // Get the base of the female's right foot
-            femaleFootRight = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_FOOTR]).FirstOrDefault();
+            _femaleFootRight = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_FOOTR]).FirstOrDefault();
 
             // Get the base of the female's left toes
-            femaleToesLeft = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_TOESL]).FirstOrDefault();
+            _femaleToesLeft = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_TOESL]).FirstOrDefault();
 
             // Get the base of the female's right toes
-            femaleToesRight = females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_TOESR]).FirstOrDefault();
+            _femaleToesRight = Females[girlIndex].GetComponentsInChildren<Transform>().Where(x => x.name == BoneAnimationDefiner.bodyBoneDictionary[BoneAnimationDefiner.BodyBone.FEMALE_TOESR]).FirstOrDefault();
         }
 
-        private List<string> updateRobotPosition()
+        private void UpdateRobotPosition()
         {
-            List<string> logList = new List<string>();
-            if (updatePosition)
+
+            if (UpdatePosition)
             {
                 // Setup T-code reference coordinate system
                 // X(L0) is up/down in reference to the selected male's penis vector and is positive up
@@ -268,180 +308,23 @@ namespace HS2_SexRobotController
                 // RZ(R2) is positive according to the right hand rule around Z(L2)
 
                 // Calculate the center point between the two penis's balls
-                Vector3 malePenisBallsCenterPoint = (malePenisLeftBall.position + malePenisRightBall.position) / 2.0f;
+                Vector3 malePenisBallsCenterPoint = (_malePenisLeftBall.position + _malePenisRightBall.position) / 2.0f;
 
                 // Calculate male's penis length
-                float malePenisLength = Vector3.Distance(malePenisBase.position, malePenisTip.position);
+                float malePenisLength = Vector3.Distance(_malePenisBase.position, _malePenisTip.position);
 
                 // Vector from the selected male's penis's base to tip
-                Vector3 malePenisXAxis = malePenisTip.position - malePenisBase.position;
+                Vector3 malePenisXAxis = _malePenisTip.position - _malePenisBase.position;
 
                 // Use the male's penis's base and the male's penis's balls center point to establish the Z reference axis
-                Vector3 malePenisZAxis = Vector3.Cross(malePenisXAxis, malePenisBallsCenterPoint - malePenisBase.position);
+                Vector3 malePenisZAxis = Vector3.Cross(malePenisXAxis, malePenisBallsCenterPoint - _malePenisBase.position);
                 malePenisZAxis = (malePenisXAxis.magnitude / malePenisZAxis.magnitude) * malePenisZAxis;
 
                 // Use the reference X and Z axes to establish the orthogonal Y axis
                 Vector3 malePenisYAxis = Vector3.Cross(malePenisXAxis, malePenisZAxis);
                 malePenisYAxis = (malePenisXAxis.magnitude / malePenisYAxis.magnitude) * malePenisYAxis;
 
-                Vector3 femaleTargetXAxis = new Vector3(0.0f, 0.0f, 0.0f);
-                Vector3 femaleTargetZAxis = new Vector3(0.0f, 0.0f, 0.0f);
-                Vector3 femaleTargetYAxis = new Vector3(0.0f, 0.0f, 0.0f);
-                Vector3 femaleTargetToMalePenisBase = new Vector3(0.0f, 0.0f, 0.0f);
-
-                if (currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.VAGINAL || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.VAGINALSWAP)
-                {
-                    // Vector from the selected female's vagina to hip
-                    femaleTargetXAxis = femaleHip.position - femaleVagina.position;
-
-                    // Use the female's vagina and hip vector and the female's anus to establish the Z reference axis
-                    femaleTargetZAxis = Vector3.Cross(femaleTargetXAxis, femaleAnus.position - femaleVagina.position);
-                    femaleTargetZAxis = (femaleTargetXAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
-
-                    // Use the reference X and Z axes to establish the orthogonal Y axis
-                    femaleTargetYAxis = Vector3.Cross(femaleTargetXAxis, femaleTargetZAxis);
-                    femaleTargetYAxis = (femaleTargetXAxis.magnitude / femaleTargetYAxis.magnitude) * femaleTargetYAxis;
-
-                    // Vector from the female's vagina to the male's penis's base
-                    femaleTargetToMalePenisBase = femaleVagina.position - malePenisBase.position;
-                }
-                else if (currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.ANAL)
-                {
-                    // Vector from the selected female's anus to hip
-                    femaleTargetXAxis = femaleHip.position - femaleAnus.position;
-
-                    // Use the female's vagina and hip vector and the female's anus to establish the Z reference axis
-                    femaleTargetZAxis = Vector3.Cross(femaleTargetXAxis, femaleAnus.position - femaleVagina.position);
-                    femaleTargetZAxis = (femaleTargetXAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
-
-                    // Use the reference X and Z axes to establish the orthogonal Y axis
-                    femaleTargetYAxis = Vector3.Cross(femaleTargetXAxis, femaleTargetZAxis);
-                    femaleTargetYAxis = (femaleTargetXAxis.magnitude / femaleTargetYAxis.magnitude) * femaleTargetYAxis;
-
-                    // Vector from the female's vagina to the male's penis's base
-                    femaleTargetToMalePenisBase = femaleAnus.position - malePenisBase.position;
-                }
-                else if (currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.ORAL || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.ORALSWAP)
-                {
-                    // Calculate the center point between the two lips of the mouth
-                    Vector3 femaleMouthLipsCenterPoint = (femaleMouthLipsUpper.position + femaleMouthLipsLower.position) / 2.0f;
-
-                    // Calculate the center point between the left and right sides of the mouth
-                    Vector3 femaleMouthCenterPoint = (femaleMouthLeft.position + femaleMouthRight.position) / 2.0f;
-
-                    // Vector from the selected female's mouth lips center point to mouth center point
-                    femaleTargetXAxis = femaleMouthCenterPoint - femaleMouthLipsCenterPoint;
-
-                    // Use the female's mouth and lips center points vector and the female's mouth to establish the Y reference axis
-                    femaleTargetYAxis = Vector3.Cross(femaleTargetXAxis, femaleMouthRight.position - femaleMouthCenterPoint);
-                    femaleTargetYAxis = (femaleTargetXAxis.magnitude / femaleTargetYAxis.magnitude) * femaleTargetYAxis;
-
-                    // Use the reference X and Y axes to establish the orthogonal Z axis
-                    femaleTargetZAxis = Vector3.Cross(femaleTargetXAxis, femaleTargetYAxis);
-                    femaleTargetZAxis = (femaleTargetXAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
-
-                    // Vector from the female's mouth center point to the male's penis's base
-                    femaleTargetToMalePenisBase = femaleMouthCenterPoint - malePenisBase.position;
-                }
-                else if (currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.BREASTS)
-                {
-                    // Calculate the center point between the two middle breasts
-                    Vector3 femaleMiddleBreastsCenterPoint = (femaleMiddleBreastsLeft.position + femaleMiddleBreastsRight.position) / 2.0f;
-
-                    // Vector from the selected female's middle breasts to breasts on chest
-                    femaleTargetYAxis = femaleBreasts.position - femaleMiddleBreastsCenterPoint;
-
-                    // Use the female's middle breasts and breasts on chest vector and the female's middle breasts right to establish the X reference axis
-                    femaleTargetXAxis = Vector3.Cross(femaleTargetYAxis, femaleMiddleBreastsRight.position - femaleMiddleBreastsCenterPoint);
-                    femaleTargetXAxis = (femaleTargetYAxis.magnitude / femaleTargetXAxis.magnitude) * femaleTargetXAxis;
-
-                    // Use the reference X and Y axes to establish the orthogonal Z axis
-                    femaleTargetZAxis = Vector3.Cross(femaleTargetYAxis, femaleTargetXAxis);
-                    femaleTargetZAxis = (femaleTargetYAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
-
-                    // Vector from the female's breasts center point to the male's penis's base
-                    femaleTargetToMalePenisBase = femaleMiddleBreastsCenterPoint - malePenisBase.position;
-                }
-                else if (currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTHAND)
-                {
-                    // Vector from the selected female's middle and ring fingers
-                    femaleTargetXAxis = femaleMiddleFingerLeft.position - femaleRingFingerLeft.position;
-
-                    // Use the female's middle and ring fingers vector and the female's hand to establish the Y reference axis
-                    femaleTargetZAxis = Vector3.Cross(femaleTargetXAxis, femaleHandLeft.position - femaleMiddleFingerLeft.position);
-                    femaleTargetZAxis = (femaleTargetXAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
-
-                    // Use the reference X and Y axes to establish the orthogonal Z axis
-                    femaleTargetYAxis = Vector3.Cross(femaleTargetXAxis, femaleTargetZAxis);
-                    femaleTargetYAxis = (femaleTargetXAxis.magnitude / femaleTargetYAxis.magnitude) * femaleTargetYAxis;
-
-                    // Vector from the female's hand to the male's penis's base
-                    femaleTargetToMalePenisBase = femaleHandLeft.position - malePenisBase.position;
-                }
-                else if (currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTHAND || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTHANDSWAP)
-                {
-                    // Vector from the selected female's middle and ring fingers
-                    femaleTargetXAxis = femaleMiddleFingerRight.position - femaleRingFingerRight.position;
-
-                    // Use the female's middle and ring fingers vector and the female's hand to establish the Y reference axis
-                    femaleTargetZAxis = Vector3.Cross(femaleTargetXAxis, femaleHandRight.position - femaleMiddleFingerRight.position);
-                    femaleTargetZAxis = (femaleTargetXAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
-
-                    // Use the reference X and Y axes to establish the orthogonal Z axis
-                    femaleTargetYAxis = Vector3.Cross(femaleTargetXAxis, femaleTargetZAxis);
-                    femaleTargetYAxis = (femaleTargetXAxis.magnitude / femaleTargetYAxis.magnitude) * femaleTargetYAxis;
-
-                    // Vector from the female's hand to the male's penis's base
-                    femaleTargetToMalePenisBase = femaleHandRight.position - malePenisBase.position;
-                }
-                else if (currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTFOOT)
-                {
-                    //DUMMY Code, missing key/value for toes to properly map this
-                    femaleTargetXAxis = femaleToesLeft.position; // femaleMiddleFingerLeft.position - femaleRingFingerLeft.position;
-
-                    // Use the female's middle and ring fingers vector and the female's hand to establish the Y reference axis
-                    femaleTargetZAxis = Vector3.Cross(femaleTargetXAxis, femaleFootLeft.position - femaleToesLeft.position);
-                    femaleTargetZAxis = (femaleTargetXAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
-
-                    // Use the reference X and Y axes to establish the orthogonal Z axis
-                    femaleTargetYAxis = Vector3.Cross(femaleTargetXAxis, femaleTargetZAxis);
-                    femaleTargetYAxis = (femaleTargetXAxis.magnitude / femaleTargetYAxis.magnitude) * femaleTargetYAxis;
-
-                    // Vector from the female's hand to the male's penis's base
-                    femaleTargetToMalePenisBase = femaleFootLeft.position - malePenisBase.position;
-                }
-                else if (currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTFOOT)
-                {
-                    //DUMMY Code, missing key/value for toes to properly map this
-                    femaleTargetXAxis = femaleToesRight.position; // femaleMiddleFingerLeft.position - femaleRingFingerLeft.position;
-
-                    // Use the female's middle and ring fingers vector and the female's hand to establish the Y reference axis
-                    femaleTargetZAxis = Vector3.Cross(femaleTargetXAxis, femaleFootRight.position - femaleToesRight.position);
-                    femaleTargetZAxis = (femaleTargetXAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
-
-                    // Use the reference X and Y axes to establish the orthogonal Z axis
-                    femaleTargetYAxis = Vector3.Cross(femaleTargetXAxis, femaleTargetZAxis);
-                    femaleTargetYAxis = (femaleTargetXAxis.magnitude / femaleTargetYAxis.magnitude) * femaleTargetYAxis;
-
-                    // Vector from the female's hand to the male's penis's base
-                    femaleTargetToMalePenisBase = femaleFootRight.position - malePenisBase.position;
-                }
-                else if (currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.INTERCRURAL || currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.INTERCRURALSWAP)
-                {
-                    // Vector from the selected female's vagina to anus
-                    femaleTargetXAxis = femaleVagina.position - femaleAnus.position;
-
-                    // Use the female's vagina and hip vector and the female's anus to establish the Z reference axis
-                    femaleTargetZAxis = Vector3.Cross(femaleTargetXAxis, femaleHip.position - femaleVagina.position);
-                    femaleTargetZAxis = (femaleTargetXAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
-
-                    // Use the reference X and Z axes to establish the orthogonal Y axis
-                    femaleTargetYAxis = Vector3.Cross(femaleTargetXAxis, femaleTargetZAxis);
-                    femaleTargetYAxis = (femaleTargetXAxis.magnitude / femaleTargetYAxis.magnitude) * femaleTargetYAxis;
-
-                    // Vector from the female's vagina to the male's penis's base
-                    femaleTargetToMalePenisBase = femaleVagina.position - malePenisBase.position;
-                }
+                GetFemaleTargetPosition(out Vector3 femaleTargetXAxis, out Vector3 femaleTargetZAxis, out Vector3 femaleTargetToMalePenisBase);
 
                 // Calculate X(L0) for robot based on the reference X axis and the vector from the female's vagina's labia trigger to the male's penis's base collider
                 float robotL0 = Vector3.Dot(malePenisXAxis, femaleTargetToMalePenisBase) / (malePenisXAxis.magnitude * malePenisXAxis.magnitude);
@@ -484,134 +367,263 @@ namespace HS2_SexRobotController
                 // Calculate automatic range values
                 if (robotL0 >= 0.0f && robotL0 <= 1.0f)
                 {
-                    if (robotL0 < autoRangeMin)
+                    if (robotL0 < _autoRangeMin)
                     {
-                        autoRangeMin = robotL0;
+                        _autoRangeMin = robotL0;
                     }
 
-                    if (robotL0 > autoRangeMax)
+                    if (robotL0 > _autoRangeMax)
                     {
-                        autoRangeMax = robotL0;
+                        _autoRangeMax = robotL0;
                     }
                 }
 
                 // Get the automatic range midpoint
-                autoRangeMid = (autoRangeMin + autoRangeMax) / 2.0f;
+                _autoRangeMid = (_autoRangeMin + _autoRangeMax) / 2.0f;
 
-                float multiplier = getAnimationMultiplier();
+                float multiplier = _l0MovementMultiplier;
 
                 // Caclulate modified robotL0
-                robotL0 = 0.5f + (robotL0 - autoRangeMid) * multiplier;
+                robotL0 = 0.5f + (robotL0 - _autoRangeMid) * multiplier;
 
                 // Formulate T-Code command string
-                string command = "L0" + GenerateTCode(robotL0, serialPortConnection.robotL0Min.Value, serialPortConnection.robotL0Max.Value) + "\n";
-                command += "L1" + GenerateTCode(robotL1, serialPortConnection.robotL1Min.Value, serialPortConnection.robotL1Max.Value) + "\n";
-                command += "L2" + GenerateTCode(robotL2, serialPortConnection.robotL2Min.Value, serialPortConnection.robotL2Max.Value) + "\n";
-                command += "R0" + GenerateTCode(robotR0, serialPortConnection.robotR0Min.Value, serialPortConnection.robotR0Max.Value) + "\n";
-                command += "R1" + GenerateTCode(robotR1, serialPortConnection.robotR1Min.Value, serialPortConnection.robotR1Max.Value) + "\n";
-                command += "R2" + GenerateTCode(robotR2, serialPortConnection.robotR2Min.Value, serialPortConnection.robotR2Max.Value);
+                string command = "L0" + GenerateTCode(robotL0, HS2_SexRobotControllerPlugin.RobotL0Min.Value, HS2_SexRobotControllerPlugin.RobotL0Max.Value) + "\n";
+                command += "L1" + GenerateTCode(robotL1, HS2_SexRobotControllerPlugin.RobotL1Min.Value, HS2_SexRobotControllerPlugin.RobotL1Max.Value) + "\n";
+                command += "L2" + GenerateTCode(robotL2, HS2_SexRobotControllerPlugin.RobotL2Min.Value, HS2_SexRobotControllerPlugin.RobotL2Max.Value) + "\n";
+                command += "R0" + GenerateTCode(robotR0, HS2_SexRobotControllerPlugin.RobotR0Min.Value, HS2_SexRobotControllerPlugin.RobotR0Max.Value) + "\n";
+                command += "R1" + GenerateTCode(robotR1, HS2_SexRobotControllerPlugin.RobotR1Min.Value, HS2_SexRobotControllerPlugin.RobotR1Max.Value) + "\n";
+                command += "R2" + GenerateTCode(robotR2, HS2_SexRobotControllerPlugin.RobotR2Min.Value, HS2_SexRobotControllerPlugin.RobotR2Max.Value);
 
-                if (serialPortConnection.diagnosticsConfig.Value)
+                if (HS2_SexRobotControllerPlugin.DiagnosticsConfig.Value)
                 {
-                    logList.Add("malePenisBase: " + malePenisBase.position.x.ToString() + ", " + malePenisBase.position.y.ToString() + ", " + malePenisBase.position.z.ToString());
-                    logList.Add("malePenisTip: " + malePenisTip.position.x.ToString() + ", " + malePenisTip.position.y.ToString() + ", " + malePenisTip.position.z.ToString());
-                    logList.Add("malePenisLeftBall: " + malePenisLeftBall.position.x.ToString() + ", " + malePenisLeftBall.position.y.ToString() + ", " + malePenisLeftBall.position.z.ToString());
-                    logList.Add("malePenisRightBall: " + malePenisRightBall.position.x.ToString() + ", " + malePenisRightBall.position.y.ToString() + ", " + malePenisRightBall.position.z.ToString());
-                    logList.Add("malePenisBallsCenterPoint: " + malePenisBallsCenterPoint.x.ToString() + ", " + malePenisBallsCenterPoint.y.ToString() + ", " + malePenisBallsCenterPoint.z.ToString());
-                    logList.Add("malePenisLength: " + malePenisLength.ToString());
-                    logList.Add("malePenisXAxis: " + malePenisXAxis.x.ToString() + ", " + malePenisXAxis.y.ToString() + ", " + malePenisXAxis.z.ToString());
-                    logList.Add("malePenisZAxis: " + malePenisZAxis.x.ToString() + ", " + malePenisZAxis.y.ToString() + ", " + malePenisZAxis.z.ToString());
-                    logList.Add("malePenisYAxis: " + malePenisYAxis.x.ToString() + ", " + malePenisYAxis.y.ToString() + ", " + malePenisYAxis.z.ToString());
-                    logList.Add("Robot L0 Multiplier: " + serialPortConnection.robotL0Multiplier.Value);
+                    HS2_SexRobotControllerPlugin.LogInfo("_malePenisBase: " + _malePenisBase.position.x.ToString() + ", " + _malePenisBase.position.y.ToString() + ", " + _malePenisBase.position.z.ToString());
+                    HS2_SexRobotControllerPlugin.LogInfo("_malePenisTip: " + _malePenisTip.position.x.ToString() + ", " + _malePenisTip.position.y.ToString() + ", " + _malePenisTip.position.z.ToString());
+                    HS2_SexRobotControllerPlugin.LogInfo("_malePenisLeftBall: " + _malePenisLeftBall.position.x.ToString() + ", " + _malePenisLeftBall.position.y.ToString() + ", " + _malePenisLeftBall.position.z.ToString());
+                    HS2_SexRobotControllerPlugin.LogInfo("_malePenisRightBall: " + _malePenisRightBall.position.x.ToString() + ", " + _malePenisRightBall.position.y.ToString() + ", " + _malePenisRightBall.position.z.ToString());
+                    HS2_SexRobotControllerPlugin.LogInfo("malePenisBallsCenterPoint: " + malePenisBallsCenterPoint.x.ToString() + ", " + malePenisBallsCenterPoint.y.ToString() + ", " + malePenisBallsCenterPoint.z.ToString());
+                    HS2_SexRobotControllerPlugin.LogInfo("malePenisLength: " + malePenisLength.ToString());
+                    HS2_SexRobotControllerPlugin.LogInfo("malePenisXAxis: " + malePenisXAxis.x.ToString() + ", " + malePenisXAxis.y.ToString() + ", " + malePenisXAxis.z.ToString());
+                    HS2_SexRobotControllerPlugin.LogInfo("malePenisZAxis: " + malePenisZAxis.x.ToString() + ", " + malePenisZAxis.y.ToString() + ", " + malePenisZAxis.z.ToString());
+                    HS2_SexRobotControllerPlugin.LogInfo("malePenisYAxis: " + malePenisYAxis.x.ToString() + ", " + malePenisYAxis.y.ToString() + ", " + malePenisYAxis.z.ToString());
                     //debugging test
-                    logList.Add("Robot L0 Multiplier (actual): " + multiplier);
-                    logList.Add("animationName: " + animationName);
-                    logList.Add("loopType: " + loopType);
-                    logList.Add("Robot L0: " + robotL0);
-                    logList.Add("Robot L1: " + robotL1);
-                    logList.Add("Robot L2: " + robotL2);
-                    logList.Add("Robot R0: " + robotR0);
-                    logList.Add("Robot R1: " + robotR1);
-                    logList.Add("Robot R2: " + robotR2);
-                    logList.Add("Robot R0 Angle: " + robotR0Angle);
-                    logList.Add("Robot R1 Angle: " + robotR1Angle);
-                    logList.Add("Robot R2 Angle: " + robotR2Angle);
-                    logList.Add("T-Code Command: \n" + command);
-                    logList.Add("autoRangeMin: " + autoRangeMin);
-                    logList.Add("autoRangeMid: " + autoRangeMid);
-                    logList.Add("autoRangeMax: " + autoRangeMax);
-                    logList.Add("robotL0 percent: " + (((robotL0 - autoRangeMin) / (autoRangeMax - autoRangeMin)) * 100.0f));
+                    HS2_SexRobotControllerPlugin.LogInfo("Robot L0 Multiplier (actual): " + multiplier);
+                    HS2_SexRobotControllerPlugin.LogInfo("AnimationName: " + AnimationName);
+                    HS2_SexRobotControllerPlugin.LogInfo("LoopType: " + LoopType);
+                    HS2_SexRobotControllerPlugin.LogInfo("IsNowOrgasm: " + IsNowOrgasm);
+                    HS2_SexRobotControllerPlugin.LogInfo("Robot L0: " + robotL0);
+                    HS2_SexRobotControllerPlugin.LogInfo("Robot L1: " + robotL1);
+                    HS2_SexRobotControllerPlugin.LogInfo("Robot L2: " + robotL2);
+                    HS2_SexRobotControllerPlugin.LogInfo("Robot R0: " + robotR0);
+                    HS2_SexRobotControllerPlugin.LogInfo("Robot R1: " + robotR1);
+                    HS2_SexRobotControllerPlugin.LogInfo("Robot R2: " + robotR2);
+                    HS2_SexRobotControllerPlugin.LogInfo("Robot R0 Angle: " + robotR0Angle);
+                    HS2_SexRobotControllerPlugin.LogInfo("Robot R1 Angle: " + robotR1Angle);
+                    HS2_SexRobotControllerPlugin.LogInfo("Robot R2 Angle: " + robotR2Angle);
+                    HS2_SexRobotControllerPlugin.LogInfo("_autoRangeMin: " + _autoRangeMin);
+                    HS2_SexRobotControllerPlugin.LogInfo("_autoRangeMid: " + _autoRangeMid);
+                    HS2_SexRobotControllerPlugin.LogInfo("_autoRangeMax: " + _autoRangeMax);
+                    HS2_SexRobotControllerPlugin.LogInfo("T-Code Command: \n" + command);
                 }
 
                 // Only update the sex robot's position/servos
                 if (robotL0 >= 0.0f && robotL0 <= 1.0f)
-                {
-                    try
-                    {
-                        if (serialPortConnection.serialPort != null)
-                        {
-                            // If serial port is open then send the command to the robot
-                            if (serialPortConnection.serialPort.IsOpen)
-                            {
-                                serialPortConnection.serialPort.WriteLine(command);
-
-                                if (serialPortConnection.diagnosticsConfig.Value)
-                                {
-                                    logList.Add("Command value sent: " + command);
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        logList.Add("Error: " + e.ToString());
-                    }
-                }
+                    SendTCodeCommand(command);
             }
-            return logList;
         }
 
-        private float getAnimationMultiplier()
+        private void GetFemaleTargetPosition(out Vector3 femaleTargetXAxis, out Vector3 femaleTargetZAxis, out Vector3 femaleTargetToMalePenisBase)
         {
-            // set default value for multiplier
-            float multiplier = (float)serialPortConnection.robotL0Multiplier.DefaultValue;
-            bool isSlowLoop = (loopType == (int)BoneAnimationDefiner.LoopType.WEAK_LOOP);
+            // initialize vectors
+            femaleTargetToMalePenisBase = Vector3.zero;
+            femaleTargetZAxis = Vector3.up;
+            femaleTargetXAxis = Vector3.right;
+            // targeted female body part
+            Vector3 targetPos;
+            // get current positions for body parts
+            Vector3 malePenisBase = _malePenisBase.position;
+            Vector3 femaleHip = _femaleHip.position;
+            Vector3 femaleAnus = _femaleAnus.position;
+            Vector3 femaleVagina = _femaleVagina.position;
+            Vector3 femaleHandL = _femaleHandLeft.position;
+            Vector3 femaleHandR = _femaleHandRight.position;
+            Vector3 femaleFootL = _femaleFootLeft.position;
+            Vector3 femaleFootR = _femaleFootRight.position;
 
-            // check if normal or limited L0 stroke length should be used
-            if (!serialPortConnection.limitRobotL0Length.Value)
+            switch (_currentFemaleTargetType)
             {
-                multiplier = serialPortConnection.robotL0Multiplier.Value;
+                case BoneAnimationDefiner.FemaleTargetType.VAGINAL:
+                case BoneAnimationDefiner.FemaleTargetType.VAGINALSWAP:
+                    {
+                        // Vector from the selected female's vagina to hip
+                        femaleTargetXAxis = femaleHip - femaleVagina;
+                        // Use the female's vagina and hip vector and the female's anus to establish the Z reference axis
+                        femaleTargetZAxis = Vector3.Cross(femaleTargetXAxis, femaleAnus - femaleVagina);
+                        femaleTargetZAxis = (femaleTargetXAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
+                        // set the targeted position
+                        targetPos = femaleVagina;
+                        break;
+                    }
+                case BoneAnimationDefiner.FemaleTargetType.ANAL:
+                    {
+                        // Vector from the selected female's anus to hip
+                        femaleTargetXAxis = femaleHip - femaleAnus;
+                        // Use the female's vagina and hip vector and the female's anus to establish the Z reference axis
+                        femaleTargetZAxis = Vector3.Cross(femaleTargetXAxis, femaleAnus - femaleVagina);
+                        femaleTargetZAxis = (femaleTargetXAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
+                        // set the targeted position
+                        targetPos = femaleAnus;
+                        break;
+                    }
+                case BoneAnimationDefiner.FemaleTargetType.ORAL:
+                case BoneAnimationDefiner.FemaleTargetType.ORALSWAP:
+                    {
+                        // Calculate the center point between the two lips of the mouth
+                        Vector3 femaleMouthLipsCenterPoint = (_femaleMouthLipsUpper.position + _femaleMouthLipsLower.position) / 2.0f;
+                        // Calculate the center point between the left and right sides of the mouth
+                        Vector3 femaleMouthCenterPoint = (_femaleMouthLeft.position + _femaleMouthRight.position) / 2.0f;
+                        // Vector from the selected female's mouth lips center point to mouth center point
+                        femaleTargetXAxis = femaleMouthCenterPoint - femaleMouthLipsCenterPoint;
+                        // Use the female's mouth and lips center points vector and the female's mouth to establish the Y reference axis
+                        Vector3 femaleTargetYAxis = Vector3.Cross(femaleTargetXAxis, _femaleMouthRight.position - femaleMouthCenterPoint);
+                        femaleTargetYAxis = (femaleTargetXAxis.magnitude / femaleTargetYAxis.magnitude) * femaleTargetYAxis;
+                        // Use the reference X and Y axes to establish the orthogonal Z axis
+                        femaleTargetZAxis = Vector3.Cross(femaleTargetXAxis, femaleTargetYAxis);
+                        femaleTargetZAxis = (femaleTargetXAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
+                        // set the targeted position
+                        targetPos = femaleMouthCenterPoint;
+                        break;
+                    }
+                case BoneAnimationDefiner.FemaleTargetType.BREASTS:
+                case BoneAnimationDefiner.FemaleTargetType.BREASTSWAP:
+                    {
+                        // Calculate the center point between the two middle breasts
+                        Vector3 femaleMiddleBreastsCenterPoint = (_femaleMiddleBreastsLeft.position + _femaleMiddleBreastsRight.position) / 2.0f;
+                        // Vector from the selected female's middle breasts to breasts on chest
+                        Vector3 femaleTargetYAxis = _femaleBreasts.position - femaleMiddleBreastsCenterPoint;
+                        // Use the female's middle breasts and breasts on chest vector and the female's middle breasts right to establish the X reference axis
+                        femaleTargetXAxis = Vector3.Cross(femaleTargetYAxis, _femaleMiddleBreastsRight.position - femaleMiddleBreastsCenterPoint);
+                        femaleTargetXAxis = (femaleTargetYAxis.magnitude / femaleTargetXAxis.magnitude) * femaleTargetXAxis;
+                        // Use the reference X and Y axes to establish the orthogonal Z axis
+                        femaleTargetZAxis = Vector3.Cross(femaleTargetYAxis, femaleTargetXAxis);
+                        femaleTargetZAxis = (femaleTargetYAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
+                        // set the targeted position
+                        targetPos = femaleMiddleBreastsCenterPoint;
+                        break;
+                    }
+                case BoneAnimationDefiner.FemaleTargetType.LEFTHAND:
+                case BoneAnimationDefiner.FemaleTargetType.LEFTHANDSWAP:
+                    {
+                        // Vector from the selected female's middle and ring fingers
+                        femaleTargetXAxis = _femaleMiddleFingerLeft.position - _femaleRingFingerLeft.position;
+                        // Use the female's middle and ring fingers vector and the female's hand to establish the Z reference axis
+                        femaleTargetZAxis = Vector3.Cross(femaleTargetXAxis, femaleHandL - _femaleMiddleFingerLeft.position);
+                        femaleTargetZAxis = (femaleTargetXAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
+                        // set the targeted position
+                        targetPos = femaleHandL;
+                        break;
+                    }
+                case BoneAnimationDefiner.FemaleTargetType.RIGHTHAND:
+                case BoneAnimationDefiner.FemaleTargetType.RIGHTHANDSWAP:
+                    {
+                        // Vector from the selected female's middle and ring fingers
+                        femaleTargetXAxis = _femaleMiddleFingerRight.position - _femaleRingFingerRight.position;
+                        // Use the female's middle and ring fingers vector and the female's hand to establish the Z reference axis
+                        femaleTargetZAxis = Vector3.Cross(femaleTargetXAxis, femaleHandR - _femaleMiddleFingerRight.position);
+                        femaleTargetZAxis = (femaleTargetXAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
+                        // set the targeted position
+                        targetPos = femaleHandR;
+                        break;
+                    }
+                case BoneAnimationDefiner.FemaleTargetType.INTERCRURAL:
+                case BoneAnimationDefiner.FemaleTargetType.INTERCRURALSWAP:
+                    {
+                        // Vector from the selected female's vagina to anus
+                        femaleTargetXAxis = femaleVagina - femaleAnus;
+                        // Use the female's vagina and hip vector and the female's anus to establish the Z reference axis
+                        femaleTargetZAxis = Vector3.Cross(femaleTargetXAxis, femaleHip - femaleVagina);
+                        femaleTargetZAxis = (femaleTargetXAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
+                        // set the targeted position
+                        targetPos = femaleHip;
+                        break;
+                    }
+                case BoneAnimationDefiner.FemaleTargetType.LEFTFOOT:
+                case BoneAnimationDefiner.FemaleTargetType.LEFTFOOTSWAP:
+                    {
+                        // There aren't singular toes, therefore only one "toe" can be tracked
+                        femaleTargetXAxis = _femaleToesLeft.position;
+                        // Use the female's toe and foot to establish the Z reference axis
+                        femaleTargetZAxis = Vector3.Cross(femaleTargetXAxis, femaleFootL - _femaleToesLeft.position);
+                        femaleTargetZAxis = (femaleTargetXAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
+                        // set the targeted position
+                        targetPos = femaleFootL;
+                        break;
+                    }
+                case BoneAnimationDefiner.FemaleTargetType.RIGHTFOOT:
+                case BoneAnimationDefiner.FemaleTargetType.RIGHTFOOTSWAP:
+                    {
+                        // There aren't singular toes, therefore only one "toe" can be tracked
+                        femaleTargetXAxis = _femaleToesRight.position;
+                        // Use the female's toe and foot to establish the Z reference axis
+                        femaleTargetZAxis = Vector3.Cross(femaleTargetXAxis, femaleFootR - _femaleToesRight.position);
+                        femaleTargetZAxis = (femaleTargetXAxis.magnitude / femaleTargetZAxis.magnitude) * femaleTargetZAxis;
+                        // set the targeted position
+                        targetPos = femaleFootR;
+                        break;
+                    }
+                default:
+                    {
+                        femaleTargetXAxis = Vector3.right;
+                        femaleTargetZAxis = Vector3.up;
+                        targetPos = femaleHip;
+                        break;
+                    }
             }
-            else
-            {
-                multiplier = serialPortConnection.limitRobotL0Multiplier.Value;
-            }
-            return multiplier;
+            // Vector from the targeted female body part to the male's penis's base
+            femaleTargetToMalePenisBase = targetPos - malePenisBase;
         }
 
         private string GenerateTCode(float input, float min, float max)
         {
-            if (input > max) input = max;
-            if (input < min) input = min;
+            // clamp input to a value between 0 and 1, then to min/max
+            input = Mathf.Clamp01(input);
+            input = Mathf.Clamp(input, min, max);
+            int servo = Mathf.RoundToInt(input * 10000f);
+            // clamp to SR6 limits
+            servo = Mathf.Clamp(servo, 0, 9999);
+            return servo.ToString("D4");
+        }
+        private void SendTCodeHomeCommand()
+        {
+            // if an unknown/unsupported animation is playing, then
+            // instead of "locking" the device in a weird position,
+            // send it "home" (Value: Mid-point (50%))
+            string command = "L05000\n" +
+            "L15000\n" +
+            "L25000\n" +
+            "R05000\n" +
+            "R15000\n" +
+            "R25000";
+            SendTCodeCommand(command);
+        }
 
-            input = input * 1000;
+        private void SendTCodeCommand(string command)
+        {
 
-            string output;
-
-            if (input >= 999f)
+            try
             {
-                output = "999";
+                // If serial port is open then and it's not a repeated command, send the command to the robot
+                if (_serialPortConnection?.SRC_SerialPort != null &&
+                    _serialPortConnection.SRC_SerialPort.IsOpen &&
+                    command != _lastCommand)
+                {
+                    _serialPortConnection.SRC_SerialPort.WriteLine(command);
+                    _lastCommand = command;
+                }
             }
-            else if (input >= 1f)
+            catch (Exception e)
             {
-                output = input.ToString("000");
+                HS2_SexRobotControllerPlugin.LogInfo("Error: " + e.ToString());
             }
-            else
-            {
-                output = "000";
-            }
-
-            return output;
         }
     }
 }
