@@ -58,6 +58,7 @@ namespace HS2_SexRobotController.Plugin
             // then check if the current animation exists
             UpdateAnimationDictionary();
             CheckAnimationName();
+            IsAnimationInsertion();
         }
 
         private static void UpdateAnimationDictionary()
@@ -99,6 +100,22 @@ namespace HS2_SexRobotController.Plugin
                 HS2_SexRobotControllerPlugin.LogInfo("Current Animation: " + robotMovement.PrevAnimationName);
                 WriteAnimationToFile(robotMovement.PrevAnimationName);
             }
+        }
+
+        private static void IsAnimationInsertion()
+        {
+            RobotMovement robotMovement = RobotMovement.GetInstance();
+            // check in what way the animation should be tracked
+            // (if insertion/penetration, calculate L0 based on the Penis bones. If e.g. handjob, footjob, etc., then calculate the L0 based on the female target)
+            BoneAnimationDefiner.animationFemaleTargetDictionary.TryGetValue(robotMovement.AnimationName, out BoneAnimationDefiner.FemaleTargetType currentFemaleTargetType);
+            robotMovement.AnimationIsInsertion = currentFemaleTargetType switch
+            {
+                BoneAnimationDefiner.FemaleTargetType.VAGINAL
+                or BoneAnimationDefiner.FemaleTargetType.VAGINALSWAP
+                or BoneAnimationDefiner.FemaleTargetType.ANAL
+                => true,
+                _ => false,
+            };
         }
 
         private static void WriteAnimationToFile(string animationName)
