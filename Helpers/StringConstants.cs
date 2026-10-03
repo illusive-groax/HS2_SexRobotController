@@ -5,7 +5,7 @@
         internal const string GAME_NAME = "HoneySelect2";
         internal const string GAME_VR_NAME = "HoneySelect2VR";
 
-        internal const string PLUGIN_VERSION = "2.3";
+        internal const string PLUGIN_VERSION = "2.3.1";
         internal const string PLUGIN_NAME = "HS2_SexRobotController";
         internal const string PLUGIN_GUID = "hs2robotics.HS2SexRobotController";
 
