@@ -12,10 +12,17 @@ namespace HS2_SexRobotController.RobotController
 
         private static SerialPortConnection _instance;
         private static readonly object _lock = new();
+        // Logger
+        private static BepInEx.Logging.ManualLogSource _logSource;
 
         private SerialPortConnection()
         {
             SRC_SerialPort = new SerialPort();
+        }
+
+        internal void SetLogSource(BepInEx.Logging.ManualLogSource logSource)
+        {
+            _logSource = logSource;
         }
 
         internal static SerialPortConnection GetInstance()
@@ -40,7 +47,7 @@ namespace HS2_SexRobotController.RobotController
         {
 
             HS2_SexRobotControllerPlugin.SerialPortConnected.Value = false;
-            HS2_SexRobotControllerPlugin.LogInfo("Serial COM port changed to: " + HS2_SexRobotControllerPlugin.SerialPortConfig.Value + ".");
+            _logSource.LogInfo("Serial COM port changed to: " + HS2_SexRobotControllerPlugin.SerialPortConfig.Value + ".");
 
             if (SRC_SerialPort != null)
             {
@@ -51,11 +58,12 @@ namespace HS2_SexRobotController.RobotController
                         // Close the serial port connection
                         SRC_SerialPort.Close();
 
-                        HS2_SexRobotControllerPlugin.LogInfo("Serial port " + SRC_SerialPort.PortName + " has been disconnected.");
+                        _logSource.LogInfo("Serial port " + SRC_SerialPort.PortName + " has been disconnected.");
                     }
                     catch (Exception e)
                     {
-                        HS2_SexRobotControllerPlugin.LogDebug("Error: " + e.ToString() + ".");
+                        _logSource.LogDebug("Error: " + e.ToString() + ".");
+                        FileHandler.WriteToDebugLog("Error: " + e.ToString() + ".");
                     }
                 }
             }
@@ -78,15 +86,16 @@ namespace HS2_SexRobotController.RobotController
 
                         HS2_SexRobotControllerPlugin.SerialPortStatus.Value = SRC_SerialPort.PortName + " port is disconnected.";
 
-                        HS2_SexRobotControllerPlugin.LogInfo("Serial port " + SRC_SerialPort.PortName + " has been disconnected.");
+                        _logSource.LogInfo("Serial port " + SRC_SerialPort.PortName + " has been disconnected.");
                     }
                     catch (Exception e)
                     {
                         HS2_SexRobotControllerPlugin.SerialPortStatus.Value = SRC_SerialPort.PortName + " port is disconnected.";
 
-                        HS2_SexRobotControllerPlugin.LogInfo("Serial port " + SRC_SerialPort.PortName + " has been disconnected.");
+                        _logSource.LogInfo("Serial port " + SRC_SerialPort.PortName + " has been disconnected.");
 
-                        HS2_SexRobotControllerPlugin.LogDebug("Error: " + e.ToString() + ".");
+                        _logSource.LogDebug("Error: " + e.ToString() + ".");
+                        FileHandler.WriteToDebugLog("Error: " + e.ToString() + ".");
                     }
                 }
             }
@@ -108,7 +117,7 @@ namespace HS2_SexRobotController.RobotController
 
                         HS2_SexRobotControllerPlugin.SerialPortConnected.Value = true;
 
-                        HS2_SexRobotControllerPlugin.LogInfo("Connected to serial port " + SRC_SerialPort.PortName + ".");
+                        _logSource.LogInfo("Connected to serial port " + SRC_SerialPort.PortName + ".");
                     }
                     else
                     {
@@ -116,7 +125,7 @@ namespace HS2_SexRobotController.RobotController
 
                         HS2_SexRobotControllerPlugin.SerialPortConnected.Value = false;
 
-                        HS2_SexRobotControllerPlugin.LogDebug("Error connecting to serial port " + SRC_SerialPort.PortName + ".");
+                        _logSource.LogDebug("Error connecting to serial port " + SRC_SerialPort.PortName + ".");
                     }
                 }
                 catch (Exception e)
@@ -125,7 +134,8 @@ namespace HS2_SexRobotController.RobotController
 
                     HS2_SexRobotControllerPlugin.SerialPortConnected.Value = false;
 
-                    HS2_SexRobotControllerPlugin.LogDebug("Error: " + e.ToString() + ".");
+                    _logSource.LogDebug("Error: " + e.ToString() + ".");
+                    FileHandler.WriteToDebugLog("Error: " + e.ToString() + ".");
                 }
             }
         }
@@ -221,16 +231,17 @@ namespace HS2_SexRobotController.RobotController
 
                             Task task = UpdateDisconnectRobotButton();
 
-                            HS2_SexRobotControllerPlugin.LogInfo("Serial port " + SRC_SerialPort.PortName + " has been disconnected.");
+                            _logSource.LogInfo("Serial port " + SRC_SerialPort.PortName + " has been disconnected.");
                         }
                         catch (Exception e)
                         {
                             HS2_SexRobotControllerPlugin.SerialPortStatus.Value = SRC_SerialPort.PortName + " port is disconnected.";
                             _ = UpdateDisconnectRobotButton();
 
-                            HS2_SexRobotControllerPlugin.LogInfo("Serial port " + SRC_SerialPort.PortName + " has been disconnected.");
+                            _logSource.LogInfo("Serial port " + SRC_SerialPort.PortName + " has been disconnected.");
 
-                            HS2_SexRobotControllerPlugin.LogDebug("Error: " + e.ToString() + ".");
+                            _logSource.LogDebug("Error: " + e.ToString() + ".");
+                            FileHandler.WriteToDebugLog("Error: " + e.ToString() + ".");
                         }
                     }
                     else
@@ -261,7 +272,7 @@ namespace HS2_SexRobotController.RobotController
 
                             Task task = UpdateConnectRobotButton();
 
-                            HS2_SexRobotControllerPlugin.LogInfo("Connected to serial port " + SRC_SerialPort.PortName + ".");
+                            _logSource.LogInfo("Connected to serial port " + SRC_SerialPort.PortName + ".");
                         }
                         else
                         {
@@ -269,7 +280,7 @@ namespace HS2_SexRobotController.RobotController
 
                             Task task = UpdateConnectRobotButton();
 
-                            HS2_SexRobotControllerPlugin.LogDebug("Error connecting to serial port " + SRC_SerialPort.PortName + ".");
+                            _logSource.LogDebug("Error connecting to serial port " + SRC_SerialPort.PortName + ".");
                         }
                     }
                     catch (Exception e)
@@ -277,9 +288,10 @@ namespace HS2_SexRobotController.RobotController
                         HS2_SexRobotControllerPlugin.SerialPortStatus.Value = "Error connecting to serial port " + SRC_SerialPort.PortName + ".";
                         _ = UpdateConnectRobotButton();
 
-                        HS2_SexRobotControllerPlugin.LogDebug("Error connecting to serial port " + SRC_SerialPort.PortName + ".");
+                        _logSource.LogDebug("Error connecting to serial port " + SRC_SerialPort.PortName + ".");
 
-                        HS2_SexRobotControllerPlugin.LogDebug("Error: " + e.ToString() + ".");
+                        _logSource.LogDebug("Error: " + e.ToString() + ".");
+                        FileHandler.WriteToDebugLog("Error: " + e.ToString() + ".");
                     }
                 }
             }

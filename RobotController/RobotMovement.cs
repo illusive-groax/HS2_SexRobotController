@@ -11,6 +11,8 @@ namespace HS2_SexRobotController.RobotController
     {
         internal const float L0_MOVEMENT_MULTIPLIER_MIN = 0.25f;
         internal const float L0_MOVEMENT_MULTIPLIER_MAX = 5.0f;
+        internal const float R0_MOVEMENT_MULTIPLIER_MIN = 0.25f;
+        internal const float R0_MOVEMENT_MULTIPLIER_MAX = 1.5f;
 
         internal int LoopType;
         internal ChaControl[] Males { get; set; }
@@ -26,10 +28,15 @@ namespace HS2_SexRobotController.RobotController
         // is the current animation a Service or Insertion type of animation?
         internal bool AnimationIsInsertion { get; set; }
 
+        // Logger
+        private static BepInEx.Logging.ManualLogSource _logSource;
+
         private float _autoRangeMin;
         private float _autoRangeMid;
         private float _autoRangeMax;
         private float _l0MovementMultiplier;
+        private bool _enableR0_ExtraTwist = false;
+        private bool _enableA0_Suck = false;
 
         private Transform _malePenisBase;
         private Transform _malePenisTip;
@@ -74,6 +81,11 @@ namespace HS2_SexRobotController.RobotController
             _serialPortConnection = SerialPortConnection.GetInstance();
         }
 
+        internal void SetLogSource(BepInEx.Logging.ManualLogSource logSource)
+        {
+            _logSource = logSource;
+        }
+
         internal static RobotMovement GetInstance()
         {
             // prevent threads stumbling over the lock once the instance is ready.
@@ -114,12 +126,13 @@ namespace HS2_SexRobotController.RobotController
                 }
                 try
                 {
-                    UpdateL0MultiplierValues();
+                    UpdateMultiplierValues();
                     UpdateRobotPosition();
                 }
-                catch (Exception ex)
+                catch (Exception e)
                 {
-                    HS2_SexRobotControllerPlugin.LogInfo("Error occurred upon position update: " + ex.ToString());
+                    _logSource.LogInfo("Error occurred upon position update: " + e.ToString());
+                    FileHandler.WriteToDebugLog("Error occurred upon position update: " + e.ToString());
                 }
             }
             else
@@ -138,9 +151,26 @@ namespace HS2_SexRobotController.RobotController
             SendTCodeHomeCommand();
         }
 
-        private void UpdateL0MultiplierValues()
+        private void UpdateMultiplierValues()
         {
-            // set multiplier based on the current looptype playing
+            bool isIdleLoop = (LoopType == (int)BoneAnimationDefiner.LoopType.OTHER);
+            _enableA0_Suck = HS2_SexRobotControllerPlugin.RobotA0SuckMultiplierEnable.Value;
+            _enableR0_ExtraTwist = HS2_SexRobotControllerPlugin.RobotR0TwistMultiplierEnable.Value;
+            // disable for idle and orgasm
+            if (isIdleLoop || IsNowOrgasm)
+            {
+                _enableA0_Suck = false;
+                _enableR0_ExtraTwist = false;
+            }
+            if (_enableA0_Suck)
+            {
+                // disable the the additional twist and suck for idle and orgasm animations
+                _enableA0_Suck = (AnimationIsInsertion
+                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.ORAL
+                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.ORALSWAP);
+            }
+
+            // set multiplier based on the current looptype playing for L0
             _l0MovementMultiplier = LoopType switch
             {
                 (int)BoneAnimationDefiner.LoopType.WEAK_LOOP => AnimationIsInsertion ? HS2_SexRobotControllerPlugin.RobotL0MovementMultiplierPenetration_Weak.Value
@@ -158,11 +188,15 @@ namespace HS2_SexRobotController.RobotController
             int maleIndex = 0;
             int girlIndex = 0;
 
-
-            if (HS2_SexRobotControllerPlugin.DiagnosticsConfig.Value)
+            if (HS2_SexRobotControllerPlugin.DiagnosticsConfigTerminal.Value)
             {
-                HS2_SexRobotControllerPlugin.LogInfo("Animation: " + AnimationName);
-                HS2_SexRobotControllerPlugin.LogInfo("Females found: " + Females.Length.ToString());
+                _logSource.LogInfo("Animation: " + AnimationName);
+                _logSource.LogInfo("Females found: " + Females.Length.ToString());
+            }
+            if (HS2_SexRobotControllerPlugin.DiagnosticsConfigLogfile.Value)
+            {
+                FileHandler.WriteToDebugLog("Animation: " + AnimationName);
+                FileHandler.WriteToDebugLog("Females found: " + Females.Length.ToString());
             }
 
             if (Males.Length >= 1 && Females.Length > 0)
@@ -173,16 +207,19 @@ namespace HS2_SexRobotController.RobotController
                 BoneAnimationDefiner.animationFemaleTargetDictionary.TryGetValue(AnimationName, out BoneAnimationDefiner.FemaleTargetType femaleTargetTypeCurrent);
                 _currentFemaleTargetType = femaleTargetTypeCurrent;
 
-                if (_currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.VAGINAL || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.ANAL || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.ORAL
-                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.BREASTS || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTHAND || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTHAND
-                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.INTERCRURAL || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTFOOT || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTFOOT
+                if (_currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.VAGINAL || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.ANAL
+                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.ORAL || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.BREASTS
+                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTHAND || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTHAND
+                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.INTERCRURAL || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTFOOT
+                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTFOOT
                     || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.BOTH_FEET)
                 {
                     UpdateFemaleTransforms(girlIndex);
                 }
                 else if (_currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.VAGINALSWAP || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.ORALSWAP
-                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.BREASTSWAP || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTHANDSWAP || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTHANDSWAP
-                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.INTERCRURALSWAP || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTFOOTSWAP || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTFOOTSWAP)
+                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.BREASTSWAP || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTHANDSWAP
+                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTHANDSWAP || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.INTERCRURALSWAP
+                    || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.LEFTFOOTSWAP || _currentFemaleTargetType == BoneAnimationDefiner.FemaleTargetType.RIGHTFOOTSWAP)
                 {
                     if (Females.Length == 2)
                     {
@@ -191,12 +228,12 @@ namespace HS2_SexRobotController.RobotController
                     }
                     else
                     {
-                        HS2_SexRobotControllerPlugin.LogInfo("ERROR: The current HScene (swap) doesn't have 2 Females.");
+                        _logSource.LogInfo("ERROR: The current HScene (swap) doesn't have 2 Females.");
                     }
                 }
-                if (HS2_SexRobotControllerPlugin.DiagnosticsConfig.Value)
+                if (HS2_SexRobotControllerPlugin.DiagnosticsConfigTerminal.Value)
                 {
-                    HS2_SexRobotControllerPlugin.LogInfo("Current animation: " + AnimationName);
+                    _logSource.LogInfo("Current animation: " + AnimationName);
                 }
 
                 AnimationChanged = false;
@@ -205,7 +242,7 @@ namespace HS2_SexRobotController.RobotController
             else
             {
                 UpdatePosition = false;
-                HS2_SexRobotControllerPlugin.LogInfo("ERROR: The current HScene doesn't have 1 male and at least 1 female.");
+                _logSource.LogInfo("ERROR: The current HScene doesn't have 1 male and at least 1 female.");
             }
 
         }
@@ -326,6 +363,9 @@ namespace HS2_SexRobotController.RobotController
 
                 GetFemaleTargetPosition(out Vector3 femaleTargetXAxis, out Vector3 femaleTargetZAxis, out Vector3 femaleTargetToMalePenisBase);
 
+                // Suck mechanism
+                float robotA0 = 0.0f;
+
                 // Calculate X(L0) for robot based on the reference X axis and the vector from the female's vagina's labia trigger to the male's penis's base collider
                 float robotL0 = Vector3.Dot(malePenisXAxis, femaleTargetToMalePenisBase) / (malePenisXAxis.magnitude * malePenisXAxis.magnitude);
 
@@ -381,10 +421,28 @@ namespace HS2_SexRobotController.RobotController
                 // Get the automatic range midpoint
                 _autoRangeMid = (_autoRangeMin + _autoRangeMax) / 2.0f;
 
-                float multiplier = _l0MovementMultiplier;
+                // if the additional Twist option is enabled, then re-calculate R0
+                if (_enableR0_ExtraTwist)
+                {
+                    // use L0 (Stroke) as movement modifier and multiply the value
+                    // need the raw value of L0, therefore calculate R0 before modifying speed
+                    robotR0 = 0.5f + (robotL0 - _autoRangeMid) + robotR0Angle / 180.0f;
+                    // going below 0.25f results in little to no movement, with 2.0f it rotates only once
+                    // therefore the "sweet spot" is roughly 0.5f - 1.5f (pending how much movement one wants)
+                    robotR0 *= HS2_SexRobotControllerPlugin.RobotR0MovementMultiplier.Value;
+                }
 
                 // Caclulate modified robotL0
-                robotL0 = 0.5f + (robotL0 - _autoRangeMid) * multiplier;
+                robotL0 = 0.5f + (robotL0 - _autoRangeMid) * _l0MovementMultiplier;
+
+                // if suck is enabled, use L0 for movement
+                if (_enableA0_Suck)
+                {
+                    robotA0 = robotL0;
+                    // inversion: value range is 0->1, so, subtract the difference
+                    if (HS2_SexRobotControllerPlugin.RobotA0SuckMultiplierInvert.Value)
+                        robotA0 = 1 - robotA0;
+                }
 
                 // Formulate T-Code command string
                 string command = "L0" + GenerateTCode(robotL0, HS2_SexRobotControllerPlugin.RobotL0Min.Value, HS2_SexRobotControllerPlugin.RobotL0Max.Value) + "\n";
@@ -392,42 +450,59 @@ namespace HS2_SexRobotController.RobotController
                 command += "L2" + GenerateTCode(robotL2, HS2_SexRobotControllerPlugin.RobotL2Min.Value, HS2_SexRobotControllerPlugin.RobotL2Max.Value) + "\n";
                 command += "R0" + GenerateTCode(robotR0, HS2_SexRobotControllerPlugin.RobotR0Min.Value, HS2_SexRobotControllerPlugin.RobotR0Max.Value) + "\n";
                 command += "R1" + GenerateTCode(robotR1, HS2_SexRobotControllerPlugin.RobotR1Min.Value, HS2_SexRobotControllerPlugin.RobotR1Max.Value) + "\n";
-                command += "R2" + GenerateTCode(robotR2, HS2_SexRobotControllerPlugin.RobotR2Min.Value, HS2_SexRobotControllerPlugin.RobotR2Max.Value);
+                command += "R2" + GenerateTCode(robotR2, HS2_SexRobotControllerPlugin.RobotR2Min.Value, HS2_SexRobotControllerPlugin.RobotR2Max.Value) + "\n";
+                command += "A0" + GenerateTCode(robotA0, HS2_SexRobotControllerPlugin.RobotA0Min.Value, HS2_SexRobotControllerPlugin.RobotA0Max.Value);
 
-                if (HS2_SexRobotControllerPlugin.DiagnosticsConfig.Value)
+                if (HS2_SexRobotControllerPlugin.DiagnosticsConfigTerminal.Value
+                    || HS2_SexRobotControllerPlugin.DiagnosticsConfigTerminal.Value)
                 {
-                    HS2_SexRobotControllerPlugin.LogInfo("_malePenisBase: " + _malePenisBase.position.x.ToString() + ", " + _malePenisBase.position.y.ToString() + ", " + _malePenisBase.position.z.ToString());
-                    HS2_SexRobotControllerPlugin.LogInfo("_malePenisTip: " + _malePenisTip.position.x.ToString() + ", " + _malePenisTip.position.y.ToString() + ", " + _malePenisTip.position.z.ToString());
-                    HS2_SexRobotControllerPlugin.LogInfo("_malePenisLeftBall: " + _malePenisLeftBall.position.x.ToString() + ", " + _malePenisLeftBall.position.y.ToString() + ", " + _malePenisLeftBall.position.z.ToString());
-                    HS2_SexRobotControllerPlugin.LogInfo("_malePenisRightBall: " + _malePenisRightBall.position.x.ToString() + ", " + _malePenisRightBall.position.y.ToString() + ", " + _malePenisRightBall.position.z.ToString());
-                    HS2_SexRobotControllerPlugin.LogInfo("malePenisBallsCenterPoint: " + malePenisBallsCenterPoint.x.ToString() + ", " + malePenisBallsCenterPoint.y.ToString() + ", " + malePenisBallsCenterPoint.z.ToString());
-                    HS2_SexRobotControllerPlugin.LogInfo("malePenisLength: " + malePenisLength.ToString());
-                    HS2_SexRobotControllerPlugin.LogInfo("malePenisXAxis: " + malePenisXAxis.x.ToString() + ", " + malePenisXAxis.y.ToString() + ", " + malePenisXAxis.z.ToString());
-                    HS2_SexRobotControllerPlugin.LogInfo("malePenisZAxis: " + malePenisZAxis.x.ToString() + ", " + malePenisZAxis.y.ToString() + ", " + malePenisZAxis.z.ToString());
-                    HS2_SexRobotControllerPlugin.LogInfo("malePenisYAxis: " + malePenisYAxis.x.ToString() + ", " + malePenisYAxis.y.ToString() + ", " + malePenisYAxis.z.ToString());
-                    //debugging test
-                    HS2_SexRobotControllerPlugin.LogInfo("Robot L0 Multiplier (actual): " + multiplier);
-                    HS2_SexRobotControllerPlugin.LogInfo("AnimationName: " + AnimationName);
-                    HS2_SexRobotControllerPlugin.LogInfo("LoopType: " + LoopType);
-                    HS2_SexRobotControllerPlugin.LogInfo("IsNowOrgasm: " + IsNowOrgasm);
-                    HS2_SexRobotControllerPlugin.LogInfo("Robot L0: " + robotL0);
-                    HS2_SexRobotControllerPlugin.LogInfo("Robot L1: " + robotL1);
-                    HS2_SexRobotControllerPlugin.LogInfo("Robot L2: " + robotL2);
-                    HS2_SexRobotControllerPlugin.LogInfo("Robot R0: " + robotR0);
-                    HS2_SexRobotControllerPlugin.LogInfo("Robot R1: " + robotR1);
-                    HS2_SexRobotControllerPlugin.LogInfo("Robot R2: " + robotR2);
-                    HS2_SexRobotControllerPlugin.LogInfo("Robot R0 Angle: " + robotR0Angle);
-                    HS2_SexRobotControllerPlugin.LogInfo("Robot R1 Angle: " + robotR1Angle);
-                    HS2_SexRobotControllerPlugin.LogInfo("Robot R2 Angle: " + robotR2Angle);
-                    HS2_SexRobotControllerPlugin.LogInfo("_autoRangeMin: " + _autoRangeMin);
-                    HS2_SexRobotControllerPlugin.LogInfo("_autoRangeMid: " + _autoRangeMid);
-                    HS2_SexRobotControllerPlugin.LogInfo("_autoRangeMax: " + _autoRangeMax);
-                    HS2_SexRobotControllerPlugin.LogInfo("T-Code Command: \n" + command);
+                    string debug = "Robot L0 Multiplier (actual): " + _l0MovementMultiplier;
+                    debug += "\nAnimationName: " + AnimationName;
+                    debug += "\nLoopType: " + LoopType;
+                    debug += "\nIsNowOrgasm: " + IsNowOrgasm;
+                    debug += "\nRobot L0: " + robotL0;
+                    debug += "\nRobot L1: " + robotL1;
+                    debug += "\nRobot L2: " + robotL2;
+                    debug += "\nRobot R0: " + robotR0;
+                    debug += "\nRobot R1: " + robotR1;
+                    debug += "\nRobot R2: " + robotR2;
+                    debug += "\nRobot A0: " + robotA0;
+                    debug += "\nRobot R0 Angle: " + robotR0Angle;
+                    debug += "\nRobot R1 Angle: " + robotR1Angle;
+                    debug += "\nRobot R2 Angle: " + robotR2Angle;
+                    debug += "\n_autoRangeMin: " + _autoRangeMin;
+                    debug += "\n_autoRangeMid: " + _autoRangeMid;
+                    debug += "\n_autoRangeMax: " + _autoRangeMax;
+                    PrintDebuggingInfo(malePenisBallsCenterPoint, malePenisLength, malePenisXAxis, malePenisZAxis, malePenisYAxis, debug, command);
                 }
 
                 // Only update the sex robot's position/servos
                 if (robotL0 >= 0.0f && robotL0 <= 1.0f)
                     SendTCodeCommand(command);
+            }
+        }
+
+        private void PrintDebuggingInfo(Vector3 malePenisBallsCenterPoint, float malePenisLength, Vector3 malePenisXAxis, Vector3 malePenisZAxis, Vector3 malePenisYAxis,
+            string debug, string command)
+        {
+            if (HS2_SexRobotControllerPlugin.DiagnosticsConfigTerminal.Value)
+            {
+                _logSource.LogInfo(debug);
+            }
+            if (HS2_SexRobotControllerPlugin.DiagnosticsConfigLogfile.Value)
+            {
+                FileHandler.WriteToDebugLog("_malePenisBase: " + _malePenisBase.position.x.ToString() + ", " + _malePenisBase.position.y.ToString() + ", " + _malePenisBase.position.z.ToString());
+                FileHandler.WriteToDebugLog("_malePenisTip: " + _malePenisTip.position.x.ToString() + ", " + _malePenisTip.position.y.ToString() + ", " + _malePenisTip.position.z.ToString());
+                FileHandler.WriteToDebugLog("_malePenisLeftBall: " + _malePenisLeftBall.position.x.ToString() + ", " + _malePenisLeftBall.position.y.ToString() + ", " + _malePenisLeftBall.position.z.ToString());
+                FileHandler.WriteToDebugLog("_malePenisRightBall: " + _malePenisRightBall.position.x.ToString() + ", " + _malePenisRightBall.position.y.ToString() + ", " + _malePenisRightBall.position.z.ToString());
+                FileHandler.WriteToDebugLog("malePenisBallsCenterPoint: " + malePenisBallsCenterPoint.x.ToString() + ", " + malePenisBallsCenterPoint.y.ToString() + ", " + malePenisBallsCenterPoint.z.ToString());
+                FileHandler.WriteToDebugLog("malePenisLength: " + malePenisLength.ToString());
+                FileHandler.WriteToDebugLog("malePenisXAxis: " + malePenisXAxis.x.ToString() + ", " + malePenisXAxis.y.ToString() + ", " + malePenisXAxis.z.ToString());
+                FileHandler.WriteToDebugLog("malePenisZAxis: " + malePenisZAxis.x.ToString() + ", " + malePenisZAxis.y.ToString() + ", " + malePenisZAxis.z.ToString());
+                FileHandler.WriteToDebugLog("malePenisYAxis: " + malePenisYAxis.x.ToString() + ", " + malePenisYAxis.y.ToString() + ", " + malePenisYAxis.z.ToString());
+                //debugging test
+                FileHandler.WriteToDebugLog(debug);
+                FileHandler.WriteToDebugLog("T-Code Command: \n" + command);
             }
         }
 
@@ -602,7 +677,8 @@ namespace HS2_SexRobotController.RobotController
             "L25000\n" +
             "R05000\n" +
             "R15000\n" +
-            "R25000";
+            "R25000\n" +
+            "A05000";
             SendTCodeCommand(command);
         }
 
@@ -622,7 +698,8 @@ namespace HS2_SexRobotController.RobotController
             }
             catch (Exception e)
             {
-                HS2_SexRobotControllerPlugin.LogInfo("Error: " + e.ToString());
+                _logSource.LogInfo("Error: " + e.ToString());
+                FileHandler.WriteToDebugLog("Error: " + e.ToString());
             }
         }
     }

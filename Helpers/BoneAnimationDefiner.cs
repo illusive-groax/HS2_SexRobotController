@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace HS2_SexRobotController.Helpers
 {
@@ -327,7 +326,7 @@ namespace HS2_SexRobotController.Helpers
             {"Cowgirl Intercrural", FemaleTargetType.INTERCRURAL},
             {"HJ + Pussyjob", FemaleTargetType.INTERCRURAL},
             {"Chair Pussyjob", FemaleTargetType.INTERCRURAL},
-            {"Chair Intercrural", FemaleTargetType.INTERCRURAL},            
+            {"Chair Intercrural", FemaleTargetType.INTERCRURAL},
             {"All-Fours Foreplay", FemaleTargetType.RIGHTHAND},
             {"All Fours Handjob", FemaleTargetType.RIGHTHAND},
             {"Femdom Piledriver", FemaleTargetType.VAGINAL},

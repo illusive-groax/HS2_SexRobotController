@@ -5,7 +5,7 @@
         internal const string GAME_NAME = "HoneySelect2";
         internal const string GAME_VR_NAME = "HoneySelect2VR";
 
-        internal const string PLUGIN_VERSION = "2.3.1";
+        internal const string PLUGIN_VERSION = "2.4";
         internal const string PLUGIN_NAME = "HS2_SexRobotController";
         internal const string PLUGIN_GUID = "hs2robotics.HS2SexRobotController";
 
@@ -19,6 +19,7 @@
         /** Path to file containing the names of the animations and positions */
         internal const string ANIMATION_FILE_PATH = ".\\BepinEx\\Plugins\\HS2_SexRobotController\\SexRobotController.txt";
         internal const string UNKNOWN_ANIMATIONS_FILE_PATH = ".\\BepinEx\\Plugins\\HS2_SexRobotController\\SRC_UnknownAnimations.txt";
+        internal const string DEBUGGING_LOG_FILE_PATH = ".\\BepinEx\\Plugins\\HS2_SexRobotController\\SRC_DebuggingLog.log";
 
         // the path in normal differs from VR
         internal const string ButtonPath_Settings = "btnTitle";
@@ -29,6 +30,8 @@
         // General settings
         internal const string SexRobotGeneralSection = "General";
         internal const string BepinExDebugOutput = "BepInEx Debug: Console Output";
+        internal const string BepinExDebugToLog = "BepInEx Debug: Write to Log";
+        internal const string BepinExDebugToLog_Tooltip = "Writes additional Plugin debugging information to íts own Logfile.";
         internal const string ReadAnimationsFromFile = "Read animations from file?";
         internal const string ReadAnimationsFromFile_Tooltip = "Reads animations and their mapping from file, allowing to include animations currently not implemented in the Plugin.";
         internal const string WriteNotFoundPositionsToFile = "Write animation names to file?";
@@ -38,8 +41,6 @@
         internal const string SerialPortConfig = "Serial Port For Sex Robot";
         internal const string SerialPortConfig_Tooltip = "Available Serial ports";
         // Keyboard shortcuts
-        internal const string SexRobotKeyboardShortcutsSection = "Keyboard shortcuts";
-        internal const string ToggleSerialPortConnectionKey = "Connect/Disconnect Sex Robot";
         internal const string ToggleSerialPortConnection = "Connect/Disconnect Sex Robot Hotkey";
         // how often the physical device should be updated
         internal const string SexRobotUpdateFrequencyConfig = "Sex Robot Update Frequency";
@@ -48,6 +49,15 @@
         internal const string SerialPortStatus_Tooltip = "Serial Port is not connected";
         internal const string SerialPortStatus_Disconnected = " port is disconnected.";
         internal const string SerialPortConnected = "Connect via Serial Port";
+        /** WIP: Twist (R0) and Suck (A0) - decide later if both in one or two separate sections **/
+        internal const string SexRobotSuckAndTwistSection = "Sex Robot (R0/A0): Suck & Twist";
+        internal const string RobotR0Multiplier = "Twist (R0) Multiplier";
+        internal const string RobotR0TwistMultiplierEnable = "Enable additional Twist Multiplier (R0):";
+        internal const string RobotR0TwistMultiplierEnable_Tooltip = "Increases the R0 movment by using the difference from the L0 (Stroke) Axis to control the movement";
+        internal const string RobotA0SuckMultiplierEnable = "Enable Sucking (A0):";
+        internal const string RobotA0SuckMultiplierEnable_Tooltip = "For supported devices having the Suck module (A0), enabling this uses the L0 (Stroke) movement to open or close";
+        internal const string RobotA0SuckMultiplierInvert = "Invert Sucking (A0):";
+        internal const string RobotA0SuckMultiplierInvert_Tooltip = "Inverts the open and close of the sucking mechanism. Default: L0-Down=Opening, L0-Up=Closing.";
         // Multipliers for L0
         private const string RobotL0MovementMultiplier = "Movement Multiplier";
         internal const string RobotL0MovementMultiplier_Tooltip = "Sex Robot (L0) Length Multiplier: Movement range along the L0-Axis (how far up and down should the device go?).";
@@ -87,6 +97,10 @@
         internal const string RobotR2Min_Tooltip = "Sex Robot (R2) Pitch Min";
         internal const string RobotR2Max = "Sex Robot (R2) Pitch Max";
         internal const string RobotR2Max_Tooltip = "Sex Robot (R2) Pitch Max";
+        internal const string RobotA0Min = "Sex Robot (A0) Suck Min";
+        internal const string RobotA0Min_Tooltip = "Sex Robot (A0) Suck Min";
+        internal const string RobotA0Max = "Sex Robot (A0) Suck Max";
+        internal const string RobotA0Max_Tooltip = "Sex Robot (A0) Suck Max";
 
         /** Buttons **/
         // connect robot
@@ -95,12 +109,8 @@
         internal const string ButtonConnectRobot_Connected = "Connected";
         internal const string ButtonConnectRobot_NotConnected = "Can't Connect";
         // disconnect robot
-        internal const string ButtonDisconnectRobot_Name = "btnDisconnectRobot";
         internal const string ButtonDisconnectRobot_Text = "Disconnect Robot";
         internal const string ButtonDisconnectRobot_Disconnected = "Disconnected";
         internal const string ButtonDisconnectRobot_NotDisconnected = "Can't Disconnect";
-
-        /** Status messages **/
-        internal const string Status_CurrentStrokeMultiplierValue = "Stroke multiplier: ";
     }
 }

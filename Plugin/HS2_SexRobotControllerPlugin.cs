@@ -32,6 +32,10 @@ namespace HS2_SexRobotController.Plugin
         private void Awake()
         {
             _Log = base.Logger;
+            _serialPortConnection = SerialPortConnection.GetInstance();
+            _serialPortConnection.SetLogSource(_Log);
+            _robotMovement = RobotMovement.GetInstance();
+            _robotMovement.SetLogSource(_Log);
             SetupPluginConfigurations();
         }
 
@@ -40,16 +44,6 @@ namespace HS2_SexRobotController.Plugin
             _sw.Reset();
             hScene = null;
             RobotMovement.GetInstance().HSceneEnding();
-        }
-
-        internal static void LogInfo(string log)
-        {
-            _Log.LogInfo(log);
-        }
-
-        internal static void LogDebug(string log)
-        {
-            _Log.LogDebug(log);
         }
 
         internal static void AnimationNameCheck()
@@ -64,8 +58,8 @@ namespace HS2_SexRobotController.Plugin
         private static void UpdateAnimationDictionary()
         {
             //check if positions should be read from file
-            if (HS2_SexRobotControllerPlugin.ReadAnimationsFromFile.Value
-                && !HS2_SexRobotControllerPlugin.FileIsRead)
+            if (ReadAnimationsFromFile.Value
+                && !FileIsRead)
             {
                 try
                 {
@@ -74,16 +68,16 @@ namespace HS2_SexRobotController.Plugin
                 }
                 catch (Exception e)
                 {
-                    HS2_SexRobotControllerPlugin.LogDebug("Error updating Animation dictionary: " + e.ToString());
+                    _Log.LogDebug("Error updating Animation dictionary: " + e.ToString());
                 }
                 // regardless of result, consider file to be read (no point re-reading file with errors)
-                HS2_SexRobotControllerPlugin.FileIsRead = true;
+                FileIsRead = true;
             }
-            else if (!HS2_SexRobotControllerPlugin.ReadAnimationsFromFile.Value)
+            else if (!ReadAnimationsFromFile.Value)
             {
                 // if disabled, set read to false, 
                 // to enable the possibility to reload file content with new animations without restarting the game
-                HS2_SexRobotControllerPlugin.FileIsRead = false;
+                FileIsRead = false;
             }
         }
 
@@ -97,7 +91,7 @@ namespace HS2_SexRobotController.Plugin
             {
                 // set the currently unknown animation name
                 robotMovement.PrevAnimationName = robotMovement.AnimationName;
-                HS2_SexRobotControllerPlugin.LogInfo("Current Animation: " + robotMovement.PrevAnimationName);
+                _Log.LogInfo("Current Animation: " + robotMovement.PrevAnimationName);
                 WriteAnimationToFile(robotMovement.PrevAnimationName);
             }
         }
@@ -125,8 +119,8 @@ namespace HS2_SexRobotController.Plugin
             if (WriteAnimationsToFile.Value)
             {
                 // set previous to the current to avoid multiple rewrites on current animation refresh
-                FileHandler.WriteToFile(animationName);
-                LogInfo("The animation name '" + animationName + "' was written to file!");
+                FileHandler.WriteUnknownAnimationsToFile(animationName);
+                _Log.LogInfo("The animation name '" + animationName + "' was written to file!");
             }
         }
 
@@ -164,7 +158,8 @@ namespace HS2_SexRobotController.Plugin
             }
             catch (Exception ex)
             {
-                Logger.LogDebug("Error in Update(): " + ex.ToString());
+                _Log.LogDebug("Error in Update(): " + ex.ToString());
+                FileHandler.WriteToDebugLog("Error in Update(): " + ex.ToString());
             }
         }
     }

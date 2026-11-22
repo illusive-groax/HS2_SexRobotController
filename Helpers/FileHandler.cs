@@ -19,12 +19,22 @@ namespace HS2_SexRobotController.Helpers
                 writer.WriteLine("{0}, {1}", entry.Key, entry.Value);
         }
 
-        internal static void WriteToFile(string animationName)
+        private static void WriteToFile(string fileName, string data)
         {
-            if (animationName == null || animationName == "")
+            if (data == null || data == "")
                 return;
-            using StreamWriter writer = new(StringConstants.UNKNOWN_ANIMATIONS_FILE_PATH, append: true);
-            writer.WriteLine(animationName);
+            using StreamWriter writer = new(fileName, append: true);
+            writer.WriteLine(data);
+        }
+
+        internal static void WriteToDebugLog(string debugEntry)
+        {
+            WriteToFile(StringConstants.DEBUGGING_LOG_FILE_PATH, debugEntry);
+        }
+
+        internal static void WriteUnknownAnimationsToFile(string animationName)
+        {
+            WriteToFile(StringConstants.UNKNOWN_ANIMATIONS_FILE_PATH, animationName);
         }
 
         internal static void ReadAnimationsFromFile()
